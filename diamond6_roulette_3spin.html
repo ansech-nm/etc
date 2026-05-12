@@ -1,0 +1,171 @@
+<style>
+*{box-sizing:border-box}
+#wrap{display:flex;gap:18px;padding:14px 0;align-items:flex-start}
+#wc{flex-shrink:0;width:300px}
+#rc{flex:1;min-width:0}
+.totbox{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:11px 14px;text-align:center;margin-bottom:8px}
+.totlb{font-size:12px;color:var(--color-text-secondary);margin-bottom:4px}
+.totnum{font-size:32px;font-weight:500;color:var(--color-text-primary);transition:color .4s}
+.totcnt{font-size:11px;color:var(--color-text-tertiary);margin-top:3px}
+#reslist{min-height:30px;margin-bottom:8px}
+.chip{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:500;margin:2px;color:white}
+.spnbtn{width:100%;padding:10px;background:#283593;color:white;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;margin-bottom:8px;transition:background .2s}
+.spnbtn:hover:not(:disabled){background:#1a237e}
+.spnbtn:disabled{background:var(--color-background-tertiary);color:var(--color-text-tertiary);cursor:default}
+.rst{width:100%;padding:6px;background:transparent;border:0.5px solid var(--color-border-secondary);color:var(--color-text-secondary);border-radius:8px;font-size:12px;cursor:pointer;font-family:inherit;margin-bottom:12px}
+.exptag{font-size:11px;color:var(--color-text-tertiary);text-align:center;margin-bottom:12px;line-height:1.6}
+.prow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.pcol{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.pname{font-size:12px;color:var(--color-text-secondary);width:56px;flex-shrink:0}
+.pbg{flex:1;height:6px;background:var(--color-background-tertiary);border-radius:3px;overflow:hidden}
+.pbar{height:100%;border-radius:3px}
+.ppct{font-size:12px;color:var(--color-text-tertiary);width:38px;text-align:right;flex-shrink:0}
+.sectit{font-size:12px;font-weight:500;color:var(--color-text-secondary);margin-bottom:8px}
+</style>
+
+<div id="wrap">
+<div id="wc">
+  <svg id="ws" width="100%" viewBox="0 0 300 370" style="display:block"></svg>
+</div>
+<div id="rc">
+  <div class="totbox">
+    <div class="totlb">💎 누적 합산</div>
+    <div class="totnum" id="tot">0</div>
+    <div class="totcnt" id="scnt">0 / 3회 · 목표 70</div>
+  </div>
+  <div id="reslist"></div>
+  <button class="spnbtn" id="spnbtn" onclick="doSpin()">🎰 룰렛 돌리기</button>
+  <button class="rst" onclick="resetSpin()">↺ 리셋</button>
+  <div class="exptag">1회 기대값 <strong>23.4 💎</strong> · 3회 합산 기대값 <strong>~70 💎</strong><br>중간값 ≈ 23 · 다이아30 확률 40.3%</div>
+  <div class="sectit">확률 구간</div>
+  <div id="plist"></div>
+</div>
+</div>
+
+<script>
+const NS='http://www.w3.org/2000/svg';
+const svg=document.getElementById('ws');
+const CX=150,CY=183,R=142;
+
+// 6 segments: E[X]=23.4, median≈23, 3-spin target=70
+const segs=[
+  {val:5, deg:15, name:'다이아5', color:'#E53935',tc:'white'},
+  {val:10,deg:25, name:'다이아10',color:'#FB8C00',tc:'#4A2600'},
+  {val:15,deg:35, name:'다이아15',color:'#00897B',tc:'white'},
+  {val:20,deg:55, name:'다이아20',color:'#1976D2',tc:'white'},
+  {val:25,deg:85, name:'다이아25',color:'#5E35B1',tc:'white'},
+  {val:30,deg:145,name:'다이아30',color:'#283593',tc:'white'},
+];
+
+// Build prob list (high→low)
+const pl=document.getElementById('plist');
+[...segs].reverse().forEach(s=>{
+  const pct=(s.deg/360*100).toFixed(1);
+  const row=document.createElement('div');row.className='prow';
+  row.innerHTML=`<div class="pcol" style="background:${s.color}"></div><div class="pname">${s.name}</div><div class="pbg"><div class="pbar" style="width:${pct}%;background:${s.color}"></div></div><div class="ppct">${pct}%</div>`;
+  pl.appendChild(row);
+});
+
+let wAngle=0,spinning=false,spinCount=0,totalDia=0;
+const mk=(t,a={})=>{const e=document.createElementNS(NS,t);Object.entries(a).forEach(([k,v])=>e.setAttribute(k,v));return e;};
+
+const wg=mk('g');svg.appendChild(wg);
+const paths=segs.map(s=>{const p=mk('path',{fill:s.color,stroke:'white','stroke-width':'2.5'});wg.appendChild(p);return p;});
+const sts=segs.map(s=>{
+  const t=mk('text',{'text-anchor':'middle','dominant-baseline':'central'});
+  Object.assign(t.style,{fontFamily:'var(--font-sans)',fontWeight:'500',fill:s.tc,fontSize:'12px'});
+  wg.appendChild(t);return t;
+});
+
+svg.appendChild(mk('circle',{cx:CX,cy:CY,r:R+9,fill:'none',stroke:'var(--color-border-secondary)','stroke-width':'1.5','stroke-dasharray':'6 3'}));
+svg.appendChild(mk('circle',{cx:CX,cy:CY,r:R,fill:'none',stroke:'white','stroke-width':'3'}));
+svg.appendChild(mk('circle',{cx:CX,cy:CY,r:46,fill:'var(--color-background-primary)',stroke:'var(--color-border-secondary)','stroke-width':'2'}));
+
+const mkT=(x,y,fs,fw,cl,txt)=>{
+  const t=mk('text',{x,y,'text-anchor':'middle','dominant-baseline':'central'});
+  Object.assign(t.style,{fontSize:fs,fontWeight:fw,fill:cl,fontFamily:'var(--font-sans)'});
+  t.textContent=txt;svg.appendChild(t);return t;
+};
+mkT(CX,CY-7,'12px','500','var(--color-text-primary)','💎 뽑기');
+mkT(CX,CY+9,'11px','400','var(--color-text-secondary)','3회');
+
+svg.appendChild(mk('line',{x1:CX,y1:CY-R-11,x2:CX,y2:CY-R-28,stroke:'#E53935','stroke-width':'5','stroke-linecap':'round'}));
+svg.appendChild(mk('polygon',{points:`${CX-13},${CY-R-9} ${CX+13},${CY-R-9} ${CX},${CY-R+12}`,fill:'#E53935',stroke:'white','stroke-width':'1.5'}));
+
+function buildWheel(rot){
+  let a=(-90+rot)*Math.PI/180;
+  segs.forEach((s,i)=>{
+    const ang=(s.deg/360)*2*Math.PI,ea=a+ang;
+    const x1=CX+Math.cos(a)*R,y1=CY+Math.sin(a)*R;
+    const x2=CX+Math.cos(ea)*R,y2=CY+Math.sin(ea)*R;
+    paths[i].setAttribute('d',`M ${CX},${CY} L ${x1.toFixed(1)},${y1.toFixed(1)} A ${R},${R} 0 ${ang>Math.PI?1:0},1 ${x2.toFixed(1)},${y2.toFixed(1)} Z`);
+    const mid=a+ang/2,tr=R*0.68,tx=CX+Math.cos(mid)*tr,ty=CY+Math.sin(mid)*tr;
+    let rot2=(mid*180/Math.PI)+90;
+    if(mid>Math.PI/2&&mid<1.5*Math.PI) rot2+=180;
+    sts[i].setAttribute('x',tx.toFixed(1));sts[i].setAttribute('y',ty.toFixed(1));
+    sts[i].setAttribute('transform',`rotate(${rot2.toFixed(1)},${tx.toFixed(1)},${ty.toFixed(1)})`);
+    a=ea;
+  });
+}
+
+function easeOut(t){return 1-Math.pow(1-t,4);}
+
+function doSpin(){
+  if(spinning||spinCount>=3) return;
+  spinning=true;
+  document.getElementById('spnbtn').disabled=true;
+
+  const rand=Math.random();
+  let cum=0,ri=segs.length-1;
+  for(let i=0;i<segs.length;i++){cum+=segs[i].deg/360;if(rand<cum){ri=i;break;}}
+
+  let segStart=0;
+  for(let i=0;i<ri;i++) segStart+=segs[i].deg;
+  const segMid=segStart+segs[ri].deg/2;
+  const targetMod=(360-segMid%360+360)%360;
+  const currentMod=((wAngle%360)+360)%360;
+  let diff=(targetMod-currentMod+360)%360;
+  if(diff<1) diff+=360;
+  const totalAngle=5*360+diff;
+  const startAngle=wAngle,duration=4200,startTime=Date.now();
+
+  function step(){
+    const elapsed=Date.now()-startTime;
+    const t=Math.min(elapsed/duration,1);
+    buildWheel(startAngle+totalAngle*easeOut(t));
+    if(t<1){requestAnimationFrame(step);}
+    else{
+      wAngle=startAngle+totalAngle;buildWheel(wAngle);
+      spinning=false;spinCount++;totalDia+=segs[ri].val;
+      document.getElementById('tot').textContent=totalDia;
+      document.getElementById('scnt').textContent=spinCount+' / 3회 · 목표 70';
+      const chip=document.createElement('span');
+      chip.className='chip';chip.style.background=segs[ri].color;
+      chip.style.color=segs[ri].tc;
+      chip.textContent='+'+segs[ri].val+' 💎';
+      document.getElementById('reslist').appendChild(chip);
+      if(spinCount>=3){
+        const tot=document.getElementById('tot');
+        if(totalDia>=70){tot.style.color='#2E7D32';document.getElementById('scnt').textContent='🎉 목표 달성! '+totalDia+' / 70';}
+        else if(totalDia>=50){tot.style.color='#F9A825';document.getElementById('scnt').textContent='아쉽게 미달성 · '+totalDia+' / 70';}
+        else{tot.style.color='#B71C1C';document.getElementById('scnt').textContent='미달성 · '+totalDia+' / 70';}
+      } else {
+        document.getElementById('spnbtn').disabled=false;
+      }
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+function resetSpin(){
+  wAngle=0;spinning=false;spinCount=0;totalDia=0;
+  buildWheel(0);
+  const tot=document.getElementById('tot');
+  tot.textContent='0';tot.style.color='var(--color-text-primary)';
+  document.getElementById('scnt').textContent='0 / 3회 · 목표 70';
+  document.getElementById('reslist').innerHTML='';
+  document.getElementById('spnbtn').disabled=false;
+}
+
+buildWheel(0);
+</script>
